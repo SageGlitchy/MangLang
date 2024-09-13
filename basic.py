@@ -16,10 +16,12 @@ class Error:
     
     def as_string(self):
         result=f'{self.error_name}: {self.details}'
-        result+= f'File{self.pos_start.fn}, Line{self.pos_start.ln +1}'
+        result+= f'File {self.pos_start.fn}, Line {self.pos_start.ln +1}'
+        return result
+    
 class IllegalCharError(Error):
-    def __init__(self, details, pos_start, pos_end):
-        super().__init__(pos_start, pos_end,'Illegal Character', details)
+    def __init__(self, pos_start, pos_end, details):
+        super().__init__(pos_start, pos_end,'Illegal Character: ', details)
         
 ######################################
 # POSITION
@@ -27,11 +29,11 @@ class IllegalCharError(Error):
 
 class Position:
     def __init__(self, idx, ln, col,fn, ftxt):
-        self.fn=fn
-        self.ftxt=ftxt
         self.idx=idx
         self.ln=ln
         self.col=col
+        self.fn=fn
+        self.ftxt=ftxt
         
     def advance(self, current_char):
         self.idx+=1
@@ -43,7 +45,7 @@ class Position:
         return self
     
     def copy(self):
-        return (self.idx, self.ln, self.col, self.fn, self.ftxt )
+        return Position(self.idx, self.ln, self.col, self.fn, self.ftxt )
           
 ######################################
 #   TOKENS
