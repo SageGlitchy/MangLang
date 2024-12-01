@@ -1,8 +1,8 @@
-import basic
+import manglang
 
 while True:
-    text=input('basic > ')
-    result,error= basic.run('<stdin>',text)
+    text=input('mang > ')
+    result,error= manglang.run('<stdin>',text)
     
     if error:
         print(error.as_string())
