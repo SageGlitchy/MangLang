@@ -1,6 +1,5 @@
 from string_with_arrows import *
 
-
 #Constants
 
 DIGITS = '0123456789'
@@ -26,7 +25,7 @@ class IllegalCharError(Error):
 
 class InvalidSyntaxError(Error):
     def __init__(self, pos_start, pos_end, details):
-        super().__init__(pos_start, pos_end, details,'Expected int or float ')
+        super().__init__(pos_start, pos_end, 'Invalid Syntax', details)
         
 #Position
 
@@ -254,7 +253,7 @@ class Parser:
         
         return res.fail(InvalidSyntaxError(
             tok.pos_start, tok.pos_end,
-            'Invalid Syntax'
+            'Expected int or float'
     )
     )
     
