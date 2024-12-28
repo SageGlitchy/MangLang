@@ -25,7 +25,11 @@ class IllegalCharError(Error):
 
 class InvalidSyntaxError(Error):
     def __init__(self, pos_start, pos_end, details):
-        super().__init__(pos_start, pos_end, 'Invalid Syntax', details)
+        super().__init__(pos_start, pos_end, 'Invalid Syntax: ', details)
+        
+class RTErr(Error):
+    def __init__(self, pos_start, pos_end, details):
+        super().__init__(pos_start, pos_end, 'Runtime Error: ', details)
         
 #Position
 
@@ -152,6 +156,8 @@ class Lexer:
 class NumberNode:
     def __init__(self, tok):
         self.tok=tok
+        self.pos_start=self.tok.pos_start
+        self.pos_end=self.tok.pos_end
     
     def __repr__(self):
         return f'{self.tok}'
@@ -161,6 +167,8 @@ class BinOpNode:
         self.left_node=left_node
         self.op_tok=op_tok
         self.right_node=right_node
+        self.pos_start=self.left_node.pos_start
+        self.pos_end=self.right_node.pos_end
         
     def __repr__(self):
         return f'({self.left_node}, {self.op_tok}, {self.right_node})'
@@ -169,6 +177,8 @@ class UnaryOpNode:
     def __init__(self, op_tok, node):
         self.op_tok=op_tok
         self.node=node
+        self.pos_start=self.op_tok.pos_start
+        self.pos_end=node.pos_end
         
     def __repr__(self):
         return f'({self.op_tok}, {self.node})'
@@ -180,7 +190,7 @@ class ParseResult:
         self.error=None
         self.node=None
         
-    def register(self,res):
+    def check(self,res):
         if isinstance(res, ParseResult):
             if res.error: self.error=res.error
             return res.node
@@ -220,30 +230,27 @@ class Parser:
                 )
             )
         return res
-
-        
-        
         
     def factor(self):
         res=ParseResult()
         
         tok=self.current_tok
         if tok.type in [TT_PLUS, TT_MINUS]:
-            res.register(self.advance())
-            factor = res.register(self.factor())
+            res.check(self.advance())
+            factor = res.check(self.factor())
             if res.error: return res
             return res.success(UnaryOpNode(tok, factor))
             
         elif tok.type in [TT_INT, TT_FLOAT]:
-            res.register(self.advance())
+            res.check(self.advance())
             return res.success(NumberNode(tok))
         
         elif tok.type==TT_LPAREN:
-            res.register(self.advance())
-            expr=res.register(self.expr())
+            res.check(self.advance())
+            expr=res.check(self.expr())
             if res.error: return res
             if self.current_tok.type==TT_RPAREN:
-                res.register(self.advance())
+                res.check(self.advance())
                 return res.success(expr)
             else:
                 return res.fail(InvalidSyntaxError(
@@ -262,7 +269,7 @@ class Parser:
     
     def expr(self):
         res=ParseResult()
-        left=res.register(self.bin_op(self.term, (TT_PLUS, TT_MINUS)))
+        left=res.check(self.bin_op(self.term, (TT_PLUS, TT_MINUS)))
         if res.error: return res
         return res.success(left)
     
@@ -270,21 +277,121 @@ class Parser:
     
     def bin_op(self, func, ops):
         res=ParseResult()
-        left=res.register(func())
+        left=res.check(func())
         if res.error: return res
         
         while self.current_tok.type in ops:
             op_tok =self.current_tok
-            res.register(self.advance())
-            right = res.register(func())
+            res.check(self.advance())
+            right = res.check(func())
             if res.error: return res
             left=BinOpNode(left, op_tok, right)
             
         return res.success(left)
+
+#Runtime Result
+
+class RTRes:
+    def __init__(self):
+        self.value=None
+        self.error=None
         
+    def check(self, res):
+        if res.error: self.error=res.error
+        return res.value
+    
+    def success(self,value):
+        self.value=value
+        return self
+    
+    def fail(self,error):
+        self.error=error
+        return self
+   
+# Numbers
+
+class Number:
+    def __init__(self,value):
+        self.value=value
+        self.set_pos()
+        
+    def set_pos(self, pos_start=None, pos_end=None):
+        self.pos_start=pos_start
+        self.pos_end=pos_end
+        return self
+            
+    def add(self, other):
+        if isinstance(other, Number):
+            return Number(self.value+other.value),None
+    
+    def subtract(self, other):
+        if isinstance(other, Number):
+            return Number(self.value-other.value),None
+        
+    def multiply(self, other):
+        if isinstance(other, Number):
+            return Number(self.value*other.value),None
+    
+    def divide(self, other):
+        if isinstance(other, Number):
+            if other.value==0:
+                return None, RTRes().fail(RTErr(other.pos_start, other.pos_end,'Division by zero not allowed'))
+            else:
+                return RTRes().success(Number(self.value/other.value)), None
+    
+    def __repr__(self):
+        return str(self.value)
+
+# Interpreter
+
+class Interpreter:
+    def visit(self, node):
+        method_name=f'visit_{type(node).__name__}'
+        method = getattr(self,method_name, self.no_visit_method)
+        return method(node)
+
+    def no_visit_method(self, node):
+        raise Exception(f'No visit_{type(node).__name__} method defined')
+    
+    def visit_NumberNode(self, node):
+        return RTRes().success(Number(node.tok.value).set_pos(node.pos_start, node.pos_end))
+        
+    def visit_BinOpNode(self, node):
+        res=RTRes()
+        left=res.check(self.visit(node.left_node))
+        if res.error: return res
+        right=res.check(self.visit(node.right_node))
+        if res.error: return res
+        
+        if node.op_tok.type == TT_PLUS:
+            result, error=left.add(right)
+        elif node.op_tok.type == TT_MINUS:
+            result, error=left.subtract(right) 
+        elif node.op_tok.type == TT_MUL:
+            result, error=left.multiply(right)  
+        elif node.op_tok.type == TT_DIV:
+            result, error=left.divide(right)
+            
+        if error:
+            return res.fail(error)
+        else:
+            return res.success(result.set_pos(node.pos_start, node.pos_end))
+        
+        
+    def visit_UnaryOpNode(self, node):
+        res=RTRes()
+        num=res.check(self.visit(node.node))
+        if res.error: return res
+        error=None
+        if node.op_tok.type==TT_MINUS:
+            num, error=num.multiply(Number(-1))
+        
+        if error:
+            return res.fail(error)
+        else:
+            return res.success(num.set_pos(node.pos_start, node.pos_end))
  
-#Run
- 
+# Run
 
 def run(fn, text):
     # Make tokens
@@ -296,62 +403,10 @@ def run(fn, text):
     # Build AST
     parser = Parser(tokens)
     ast = parser.parse()
-    if ast.error:
-        return None, ast.error
+    if ast.error: return None, ast.error
+    
+    # Interpret AST
+    interpreter=Interpreter()
+    result=interpreter.visit(ast.node)
 
-    return ast.node, ast.error
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-   
+    return result.value,result.error
